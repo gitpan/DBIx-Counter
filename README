@@ -1,4 +1,4 @@
-DBIx-Counter version 0.01
+DBIx-Counter version 0.02
 =========================
 
 NAME
@@ -6,7 +6,7 @@ NAME
 
 WARNING
     This is the initial release! It has been tested to work with SQLite,
-    Mysql and MS SQL Server, under perl 5.6 and 5.8.
+    Mysql, Postgresql and MS SQL Server, under perl 5.6 and 5.8.
 
     I would appreciate feedback, and some help on making it compatible with
     older versions of perl. I know 'use warnings' and 'our' don't work
@@ -25,14 +25,25 @@ SYNOPSIS
 
 DESCRIPTION
     This module creates and maintains named counters in a database. It has a
-    simple interface, with methods to increment and decrement the counter by
+    simple interface, with methods to increment and decrement the counterby
     one, and a method for retrieving the value. It supports operator
     overloading for increment (++), decrement (--) and stringification ("").
+
     It should perform well in persistent environments, since it uses the
-    connect_cached and prepare_cached methods of DBI. The biggest advantage
-    over its main inspiration - File::CounterFile - is that it allows
-    distributed, concurrent access to the counters and isn't tied to a
-    single file system.
+    connect_cached and prepare_cached methods of DBI.
+
+    The biggest advantage over its main inspiration - File::CounterFile - is
+    that it allows distributed, concurrent access to the counters and isn't
+    tied to a single file system.
+
+    Connection settings can be set in the constructor. The table name is
+    configurable, but the column names are currently hard-coded to
+    counter_id and value.
+
+    This module attempts to mimick the File::CounterFile interface, except
+    currently it only supports integer counters. The locking functions in
+    File::CounterFile are present for compatibility only: they always return
+    0.
 
 INSTALLATION
 

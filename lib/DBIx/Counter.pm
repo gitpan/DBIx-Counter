@@ -3,7 +3,6 @@ package DBIx::Counter;
 use DBI;
 use Carp qw(carp croak);
 use strict;
-use warnings;
 
 require 5.004;
 
@@ -14,9 +13,9 @@ use overload (
                fallback => 1,
              );
 
-our ($VERSION, $DSN, $LOGIN, $PASSWORD, $TABLENAME );
+use vars qw( $VERSION $DSN $LOGIN $PASSWORD $TABLENAME );
 
-$VERSION = '0.01';
+$VERSION = '0.02';
 
 =pod
 
@@ -26,9 +25,12 @@ DBIx::Counter - Manipulate named counters stored in a database
 
 =head1 WARNING
 
-This is the initial release! It has been tested to work with SQLite, Mysql and MS SQL Server, under perl 5.6 and 5.8. 
+This is the initial release! It has been tested to work with SQLite, Mysql,
+Postgresql and MS SQL Server, under perl 5.6 and 5.8. 
 
-I would appreciate feedback, and some help on making it compatible with older versions of perl. I know 'use warnings' and 'our' don't work before 5.6, but that's where my historic knowledge ends.
+I would appreciate feedback, and some help on making it compatible with older
+versions of perl. I know 'use warnings' and 'our' don't work before 5.6, but
+that's where my historic knowledge ends.
 
 =head1 SYNOPSIS
 
@@ -44,53 +46,96 @@ I would appreciate feedback, and some help on making it compatible with older ve
 
 =head1 DESCRIPTION
 
-This module creates and maintains named counters in a database.
-It has a simple interface, with methods to increment and decrement the counter by one, and a method for retrieving the value.
-It supports operator overloading for increment (++), decrement (--) and stringification ("").
-It should perform well in persistent environments, since it uses the connect_cached and prepare_cached methods of DBI.
-The biggest advantage over its main inspiration - L<File::CounterFile> - is that it allows distributed, concurrent access to the counters and isn't tied to a single file system.
+This module creates and maintains named counters in a database. It has a simple
+interface, with methods to increment and decrement the counterby one, and a
+method for retrieving the value. It supports operator overloading for
+increment (++), decrement (--) and stringification ("").
 
-Connection settings can be set in the constructor, or by using the package variables $DSN, $LOGIN and $PASSWORD and $TABLENAME.
-The table name is configurable, but the column names are currently hard-coded to counter_id and value. The following SQL statement can be used to create the table:
+It should perform well in persistent environments, since it uses the
+L<connect_cached|DBI/item_connect_cached> and L<prepare_cached|DBI/item_prepare_cached> methods of L<DBI>.
+
+The biggest advantage over its main inspiration - L<File::CounterFile> - is that
+it allows distributed, concurrent access to the counters and isn't tied to a
+single file system.
+
+Connection settings can be set in the constructor. The table name is
+configurable, but the column names are currently hard-coded to counter_id and
+value.
+
+The following SQL statement can be used to create the table:
 
     CREATE TABLE counters (
         counter_id  varchar(64) primary key,
         value       int not null default 0
     );
 
-This module attempts to mimick the File::CounterFile interface, except currently it only supports integer counters.
-The locking functions in File::CounterFile are present for compatibility only: they always return 0.
+This module attempts to mimick the File::CounterFile interface, except
+currently it only supports integer counters. The locking functions in
+File::CounterFile are present for compatibility only: they always return 0.
 
-=head1 METHODS
+=head2 EXAMPLES
+
+Some other ways to call new():
+
+    # with an initial value, and a different table name
+    $c = DBIx::Counter->new('my counter',
+                            42,
+                            dsn       => 'dbi:mysql:mydb',
+                            tablename => 'gauges'
+                           );
+
+    # with a predefined connection
+    $c = DBIx::Counter->new('my counter', dbh => $dbh);
+    
+A very basic real-world example:
+
+    # a hit counter!
+    # demonstrates operator overloading and stringification
+    use CGI qw/:standard/;
+    use DBIx::Counter;
+
+    print header(),
+          start_html(),
+          h1("Welcome");
+    
+    my $c = DBIx::Counter->new('my_favorite_page', 
+                            dsn       => 'dbi:mysql:mydb',
+                            login     => 'username',
+                            password  => 'secret'
+                           );
+    
+    $c++;
+    
+    print 
+       em("this page has been accessed $c times!"),
+       end_html();
+
+=head2 METHODS
 
 =over
 
 =item new
 
 Creates a new counter instance. 
-First parameter is the required counter name. 
-Second, optional, argument is an initial value for the counter on its very first use. 
-It also accepts named parameters for an already existing database handle, or the dbi connection string, dbi login and dbi password, and the table name:
 
-    dbh         - a pre-existing DBI connection
-    dsn         - overrides $DBIx::Counter::DSN
-    login       - overrides $DBIx::Counter::LOGIN
-    password    - overrides $DBIx::Counter::PASSWORD
-    tablename   - overrides $DBIx::Counter::TABLENAME
+First parameter is the required counter name. Second, optional, argument is
+an initial value for the counter on its very first use. It also accepts named
+parameters for an already existing database handle, or the dbi connection
+string, dbi login and dbi password, and the table name:
 
-    Examples:
-    $c = DBIx::Counter->new('my counter');
-    $c = DBIx::Counter->new('my counter', dbh => $dbh);
-    $c = DBIx::Counter->new('my counter', 
-                            dsn       => 'dbi:mysql:mydb',
-                            login     => 'username',
-                            password  => 'secret'
-                           );
-    $c = DBIx::Counter->new('my counter',
-                            42,
-                            dsn       => 'dbi:mysql:mydb',
-                            tablename => 'gauges'
-                           );
+=over
+
+=item dbh - A pre-existing DBI connection
+
+=item dsn - A valid dbi connection string
+
+=item login - Optional
+
+=item password - Optional
+
+=item tablename - Defaults to 'counters'
+
+=back
 
 =cut
 
@@ -98,7 +143,7 @@ sub new
 {
     my $pkg         = shift;
     my $countername = shift or croak("No counter name supplied");
-    my $initial     = shift if @_ % 2;
+    unshift @_, 'initial' if @_ % 2;
     my %opts        = @_;
 
     my $self = {
@@ -108,10 +153,11 @@ sub new
                  login       => $opts{login}     || $LOGIN,
                  password    => $opts{password}  || $PASSWORD,
                  tablename   => $opts{tablename} || $TABLENAME || 'counters',
-                 initial     => $initial         || '0',
+                 initial     => $opts{initial}   || '0',
                };
 
-    croak("Unable to connect to database: no valid connection handle or valid DSN supplied") unless $self->{dbh} or $self->{dsn};
+    croak("Unable to connect to database: no valid connection handle or DSN supplied")
+      unless $self->{dbh} or $self->{dsn};
 
     bless $self, $pkg;
     $self->_init;
@@ -121,12 +167,14 @@ sub new
 sub _init
 {
     my $self = shift;
+
     # create counter record if not exists
     eval {
         my $dbh = $self->_db;
         my ($exists) = $dbh->selectrow_array( qq{select count(*) from $self->{tablename} where counter_id=?}, undef, $self->{countername} );
-        unless( $exists > 0 ) {
-            $dbh->do( qq{insert into $self->{tablename} (counter_id,value) values (?,?)}, undef, $self->{countername}, $self->{initial} ) ;
+        unless ( $exists > 0 )
+        {
+            $dbh->do( qq{insert into $self->{tablename} (counter_id,value) values (?,?)}, undef, $self->{countername}, $self->{initial} );
         }
     } or croak "Error creating counter record: $@";
 }
@@ -134,7 +182,9 @@ sub _init
 sub _db
 {
     my $self = shift;
-    return $self->{dbh} || DBI->connect_cached( $self->{dsn}, $self->{login}, $self->{password}, { PrintError => 0, RaiseError => 1 } );
+
+    return $self->{dbh}
+      || DBI->connect_cached( $self->{dsn}, $self->{login}, $self->{password}, { PrintError => 0, RaiseError => 1 } );
 }
 
 sub _add
@@ -222,13 +272,42 @@ Noop. Only provided for API compatibility with File::CounterFile.
 
 =cut
 
-sub lock { 0 }
+sub lock   { 0 }
 sub unlock { 0 }
 sub locked { 0 }
 
 =pod
 
 =back
+
+=head2 GLOBAL SETTINGS
+
+In addition to passing settings through the constructor, it's also possible
+to use the package variables $DSN, $LOGIN and $PASSWORD and $TABLENAME. This
+allows you to specify the settings application-wide, or within a block of code
+where you need multiple counters. Each of those variables supplies a default
+for the lowercase parameters to L</new>.
+
+However, be aware that using global variables is B<not recommended>. Setting them
+in more than one place will make it difficult to track down bugs. Using them in
+multiple applications in persistent environments such as mod_perl B<will>
+result in unpredictable behaviour. If you really need to use this feature,
+always try to use "local".
+
+Here's an example:
+
+    use DBIx::Counter;
+    
+    sub count_stuff {
+        local $DBIx::Counter::DSN       = 'dbi:SQLite:dbname=counters.sqlt';
+        local $DBIx::Counter::TABLENAME = 'my_own_counters';
+        
+        my $c1 = DBIx::Counter->new('gauge one');
+        my $c2 = DBIx::Counter->new('gauge two');
+        
+        # ...
+    }
+
 
 =head1 SEE ALSO
 

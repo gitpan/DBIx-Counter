@@ -44,9 +44,9 @@ unless ( defined $count ) {
 #####
 # tests start here
 
-BEGIN { use_ok( 'DBIx::Counter' ); }
+plan tests => 11;
 
-plan tests => 9;
+use DBIx::Counter;
 
 my $c = DBIx::Counter->new('test', dsn => $dsn{DataSource}, login=>'aap' );
 
@@ -74,6 +74,11 @@ $d = DBIx::Counter->new('test2');
 
 like($@, qr/Unable to connect to database/, "croaks OK without proper arguments");
 
+$d = DBIx::Counter->new('test', dbh => $dbh);
+is($d->value, 1, "Using a predefined dbh works");
+$d++;
+is($c->value, 2, "multiple counters work");
+
 local $DBIx::Counter::DSN   = $dsn{DataSource};
 local $DBIx::Counter::LOGIN = '';
 
@@ -83,3 +88,8 @@ isa_ok( $d, 'DBIx::Counter', "package variable settings work: d");
 is($d->value, 4, "d == 4: initial works");
 
 $c->_db->do(qq{delete from $dsn{TableName}});
+
+# to avoid warnings
+local $DBIx::Counter::DSN   = $dsn{DataSource};
+local $DBIx::Counter::LOGIN = '';
+
