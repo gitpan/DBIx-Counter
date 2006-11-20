@@ -15,7 +15,96 @@ use overload (
 
 use vars qw( $VERSION $DSN $LOGIN $PASSWORD $TABLENAME );
 
-$VERSION = '0.02';
+$VERSION = '0.03';
+
+sub new
+{
+    my $pkg         = shift;
+    my $countername = shift or croak("No counter name supplied");
+    unshift @_, 'initial' if @_ % 2;
+    my %opts        = @_;
+
+    my $self = {
+                 countername => $countername,
+                 dbh         => $opts{dbh},
+                 dsn         => $opts{dsn}       || $DSN,
+                 login       => $opts{login}     || $LOGIN,
+                 password    => $opts{password}  || $PASSWORD,
+                 tablename   => $opts{tablename} || $TABLENAME || 'counters',
+                 initial     => $opts{initial}   || '0',
+               };
+
+    croak("Unable to connect to database: no valid connection handle or DSN supplied")
+      unless $self->{dbh} or $self->{dsn};
+
+    bless $self, $pkg;
+    $self->_init;
+    $self;
+}
+
+sub _init
+{
+    my $self = shift;
+
+    # create counter record if not exists
+    eval {
+        my $dbh = $self->_db;
+        my ($exists) = $dbh->selectrow_array( qq{select count(*) from $self->{tablename} where counter_id=?}, undef, $self->{countername} );
+        unless ( $exists > 0 )
+        {
+            $dbh->do( qq{insert into $self->{tablename} (counter_id,value) values (?,?)}, undef, $self->{countername}, $self->{initial} );
+        }
+    } or croak "Error creating counter record: $@";
+}
+
+sub _db
+{
+    my $self = shift;
+
+    return $self->{dbh}
+      || DBI->connect_cached( $self->{dsn}, $self->{login}, $self->{password}, { PrintError => 0, RaiseError => 1 } );
+}
+
+sub _add
+{
+    my ( $self, $add ) = @_;
+    my $dbh     = $self->_db;
+    my $sth_set = $dbh->prepare_cached(qq{update $self->{tablename} set value=value+? where counter_id=?});
+    $sth_set->execute( $add, $self->{countername} );
+}
+
+sub inc
+{
+    my $self = shift;
+    $self->_add(1);
+}
+
+sub dec
+{
+    my $self = shift;
+    $self->_add(-1);
+}
+
+sub value
+{
+    my $self    = shift;
+    my $dbh     = $self->_db;
+    my $sth_get = $dbh->prepare_cached(qq{select value from $self->{tablename} where counter_id=?});
+
+    $sth_get->execute( $self->{countername} );
+    my ($v) = $sth_get->fetchrow_array;
+    $sth_get->finish;
+
+    return $v;
+}
+
+sub lock   { 0 }
+sub unlock { 0 }
+sub locked { 0 }
+
+1;
+
+__END__
 
 =pod
 
@@ -47,7 +136,7 @@ that's where my historic knowledge ends.
 =head1 DESCRIPTION
 
 This module creates and maintains named counters in a database. It has a simple
-interface, with methods to increment and decrement the counterby one, and a
+interface, with methods to increment and decrement the counter by one, and a
 method for retrieving the value. It supports operator overloading for
 increment (++), decrement (--) and stringification ("").
 
@@ -137,66 +226,6 @@ string, dbi login and dbi password, and the table name:
 
 =back
 
-=cut
-
-sub new
-{
-    my $pkg         = shift;
-    my $countername = shift or croak("No counter name supplied");
-    unshift @_, 'initial' if @_ % 2;
-    my %opts        = @_;
-
-    my $self = {
-                 countername => $countername,
-                 dbh         => $opts{dbh},
-                 dsn         => $opts{dsn}       || $DSN,
-                 login       => $opts{login}     || $LOGIN,
-                 password    => $opts{password}  || $PASSWORD,
-                 tablename   => $opts{tablename} || $TABLENAME || 'counters',
-                 initial     => $opts{initial}   || '0',
-               };
-
-    croak("Unable to connect to database: no valid connection handle or DSN supplied")
-      unless $self->{dbh} or $self->{dsn};
-
-    bless $self, $pkg;
-    $self->_init;
-    $self;
-}
-
-sub _init
-{
-    my $self = shift;
-
-    # create counter record if not exists
-    eval {
-        my $dbh = $self->_db;
-        my ($exists) = $dbh->selectrow_array( qq{select count(*) from $self->{tablename} where counter_id=?}, undef, $self->{countername} );
-        unless ( $exists > 0 )
-        {
-            $dbh->do( qq{insert into $self->{tablename} (counter_id,value) values (?,?)}, undef, $self->{countername}, $self->{initial} );
-        }
-    } or croak "Error creating counter record: $@";
-}
-
-sub _db
-{
-    my $self = shift;
-
-    return $self->{dbh}
-      || DBI->connect_cached( $self->{dsn}, $self->{login}, $self->{password}, { PrintError => 0, RaiseError => 1 } );
-}
-
-sub _add
-{
-    my ( $self, $add ) = @_;
-    my $dbh     = $self->_db;
-    my $sth_set = $dbh->prepare_cached(qq{update $self->{tablename} set value=value+? where counter_id=?});
-    $sth_set->execute( $add, $self->{countername} );
-}
-
-=pod
-
 =item inc
 
 increases the counter by one.
@@ -204,16 +233,6 @@ increases the counter by one.
     $c->inc;
     # or using overload:
     $c++;
-
-=cut
-
-sub inc
-{
-    my $self = shift;
-    $self->_add(1);
-}
-
-=pod
 
 =item dec
 
@@ -223,16 +242,6 @@ decreases the counter by one.
     # or using overload:
     $c--;
 
-=cut
-
-sub dec
-{
-    my $self = shift;
-    $self->_add(-1);
-}
-
-=pod
-
 =item value
 
 returns the current value of the counter.
@@ -240,23 +249,6 @@ returns the current value of the counter.
     print $c->value;
     # or using overload: 
     print "Item $c is being processed\n";
-
-=cut
-
-sub value
-{
-    my $self    = shift;
-    my $dbh     = $self->_db;
-    my $sth_get = $dbh->prepare_cached(qq{select value from $self->{tablename} where counter_id=?});
-
-    $sth_get->execute( $self->{countername} );
-    my ($v) = $sth_get->fetchrow_array;
-    $sth_get->finish;
-
-    return $v;
-}
-
-=pod
 
 =item lock
 
@@ -269,14 +261,6 @@ Noop. Only provided for API compatibility with File::CounterFile.
 =item locked
 
 Noop. Only provided for API compatibility with File::CounterFile.
-
-=cut
-
-sub lock   { 0 }
-sub unlock { 0 }
-sub locked { 0 }
-
-=pod
 
 =back
 
@@ -327,4 +311,3 @@ at your option, any later version of Perl 5 you may have available.
 
 =cut
 
-1;

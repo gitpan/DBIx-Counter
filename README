@@ -1,4 +1,4 @@
-DBIx-Counter version 0.02
+DBIx-Counter version 0.03
 =========================
 
 NAME
@@ -25,7 +25,7 @@ SYNOPSIS
 
 DESCRIPTION
     This module creates and maintains named counters in a database. It has a
-    simple interface, with methods to increment and decrement the counterby
+    simple interface, with methods to increment and decrement the counter by
     one, and a method for retrieving the value. It supports operator
     overloading for increment (++), decrement (--) and stringification ("").
 

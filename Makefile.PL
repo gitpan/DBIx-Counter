@@ -5,6 +5,7 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     NAME              => 'DBIx::Counter',
     VERSION_FROM      => 'lib/DBIx/Counter.pm', # finds $VERSION
+    LICENSE           => 'perl',
     PREREQ_PM         => { 
                         DBI => 1.06,
                         Carp => 0.01,
